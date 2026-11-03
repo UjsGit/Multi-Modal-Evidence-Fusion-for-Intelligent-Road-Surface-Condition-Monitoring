@@ -1,0 +1,21 @@
+You are continuing development on the "Tiered Crowdsourced Road-Quality Map (Proof-of-Concept)" project located in this workspace.
+
+CURRENT STATUS & COMPLETED WORK:
+1. Base project architecture is fully built and tested against all 6 acceptance criteria in `Agent_Build_Prompt.md`:
+   - `backend/api.py`: FastAPI REST API serving GeoJSON segments, single-edge observation history, ingestion triggers, and time-decay simulation.
+   - `backend/db.py`: SQLite database storing 205 real OpenStreetMap road segments for Bengaluru ORR (Marathahalli - Silk Board, bbox 12.925-12.945 N, 77.660-77.700 E).
+   - `backend/ingest_common.py`: Shared YOLO detection wrapper with heuristic fallback, OSM edge snapper, geotag interpolator, and optical-flow vibration analyzer.
+   - `backend/ingest_tier0.py`: Google Street View cold start ingestion.
+   - `backend/ingest_tier1.py`: Dashcam video ingestion with geotag interpolation along OSM ways.
+   - `backend/ingest_tier2.py`: Multi-sensor vibration correlation + false-positive suppression.
+   - `frontend/index.html`, `frontend/map.js`, `frontend/style.css`: Leaflet map with purpose-built civic/infrastructure dark-asphalt aesthetic, discrete condition color bands, slide-in inspector drawer, and live simulation controls.
+   - `scripts/test_pipeline.py`: Passes all 6 acceptance checks with 100% success.
+
+NEXT STEPS FOR YOU TO CONTINUE:
+1. Integrate live data:
+   - Check if real model weights exist in `models/best.pt`. If present, verify inference using Ultralytics YOLO.
+   - If videos exist in `data/raw/tier1/sample_videos/`, wire them to extract frames and geotag along target edges.
+   - If real IMU CSVs exist in `data/raw/tier2/sample_imu/`, correlate vertical accelerometer spikes (`acc_z`) with detected defect timestamps.
+2. If Google Street View API key is configured in `.env`, test live Street View metadata fetching.
+3. Enhance the Leaflet inspector UI with image thumbnail previews of detected road defects for selected segments.
+4. Run `python scripts/test_pipeline.py` and `python backend/api.py` to test your changes.

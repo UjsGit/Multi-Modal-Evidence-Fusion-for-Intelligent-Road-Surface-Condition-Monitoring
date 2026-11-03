@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bengaluru ORR Road Quality Map | Tiered Infrastructure Ingestion</title>
+  
+  <!-- Fonts: IBM Plex Sans & IBM Plex Mono for technical GIS instrument styling -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  
+  <!-- Custom Technical Styling -->
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+  <!-- Full-viewport Map Container -->
+  <div id="map"></div>
+
+  <!-- Left GIS Control & Ingestion Panel -->
+  <aside id="gis-sidebar" class="gis-panel">
+    <header class="panel-header">
+      <div class="system-badge">CORRIDOR MONITOR // BENGALURU ORR</div>
+      <h1 class="panel-title">ROAD QUALITY MAP</h1>
+      <div class="corridor-meta">
+        <span>BBOX: 12.925N–12.945N / 77.660E–77.700E</span>
+        <span>STRETCH: MARATHAHALLI – SILK BOARD (1.5 KM)</span>
+      </div>
+    </header>
+
+    <!-- Ingestion Tiers Controller -->
+    <section class="panel-section">
+      <div class="section-title">INGESTION TIERS (INDEPENDENT REFRESH)</div>
+      
+      <!-- Tier 0 -->
+      <div class="tier-item" id="tier-0-row">
+        <div class="tier-info">
+          <span class="tier-tag tier-0-tag">TIER 0</span>
+          <span class="tier-name">Google Street View</span>
+          <span class="tier-trust-badge">TRUST: LOW</span>
+        </div>
+        <p class="tier-desc">Baseline cold start from static road-level optical imagery (360° heading).</p>
+        <div class="tier-btn-group">
+          <button id="btn-run-tier0" class="btn-action">RUN TIER 0 INGEST</button>
+          <button id="btn-config-gsv" class="btn-action btn-flat-sub" title="Configure Google Street View API Key">API KEY</button>
+        </div>
+      </div>
+
+      <!-- Tier 1 -->
+      <div class="tier-item" id="tier-1-row">
+        <div class="tier-info">
+          <span class="tier-tag tier-1-tag">TIER 1</span>
+          <span class="tier-name">Dashcam Video</span>
+          <span class="tier-trust-badge">TRUST: MED</span>
+        </div>
+        <p class="tier-desc">Recent YouTube/dashcam footage + route waypoint geotag interpolation.</p>
+        <div class="tier-scan-options">
+          <label for="tier1-scan-density" class="scan-density-label">SCAN COVERAGE:</label>
+          <select id="tier1-scan-density" class="scan-density-select mono">
+            <option value="dense" selected>Dense (10 FPS / ~3x coverage)</option>
+            <option value="ultra">Ultra (15 FPS / Every 2nd frame)</option>
+            <option value="standard">Standard (3 FPS / Fast)</option>
+            <option value="full">Complete 100% (Every Frame)</option>
+          </select>
+        </div>
+        <div class="tier-btn-group">
+          <button id="btn-run-tier1" class="btn-action">RUN TIER 1 INGEST</button>
+          <button id="btn-open-upload-modal" class="btn-action btn-upload-accent">UPLOAD ROAD VIDEO</button>
+        </div>
+      </div>
+
+      <!-- Tier 2 -->
+      <div class="tier-item" id="tier-2-row">
+        <div class="tier-info">
+          <span class="tier-tag tier-2-tag">TIER 2</span>
+          <span class="tier-name">Dashcam + Vibration</span>
+          <span class="tier-trust-badge">TRUST: HIGH</span>
+        </div>
+        <p class="tier-desc">Multi-sensor correlation: accelerometer spikes vs optical-flow jitter.</p>
+        <div class="tier-scan-options">
+          <label for="tier2-vibe-mode" class="scan-density-label">VIBRATION SOURCE:</label>
+          <select id="tier2-vibe-mode" class="scan-density-select mono">
+            <option value="real_imu" selected>Real 100Hz IMU (corridor_vibration.csv)</option>
+            <option value="proxy">Optical-Flow Video Jitter Proxy (Farneback CV)</option>
+          </select>
+        </div>
+        <div class="tier-btn-group">
+          <button id="btn-run-tier2" class="btn-action">RUN TIER 2 INGEST</button>
+          <button id="btn-open-imu-upload" class="btn-action btn-flat-sub">UPLOAD IMU</button>
+        </div>
+      </div>
+
+      <!-- Tier 3 (LiDAR - Out of Scope Stub) -->
+      <div class="tier-item tier-disabled" id="tier-3-row">
+        <div class="tier-info">
+          <span class="tier-tag tier-3-tag">TIER 3</span>
+          <span class="tier-name">Survey LiDAR Vehicle</span>
+          <span class="tier-trust-badge">TRUST: BENCHMARK</span>
+        </div>
+        <p class="tier-desc">Ground-truth spatial LiDAR reference (architecture stub reserved).</p>
+        <button class="btn-action" disabled>RESERVED / STUB</button>
+      </div>
+    </section>
+
+    <!-- Map Layer Filters -->
+    <section class="panel-section">
+      <div class="section-title">VIEW FILTER (TIER CONTRIBUTIONS)</div>
+      <div class="filter-group">
+        <label class="radio-label">
+          <input type="radio" name="layer-filter" value="all" checked>
+          <span>FUSED STATE (ALL TIERS)</span>
+        </label>
+        <label class="radio-label">
+          <input type="radio" name="layer-filter" value="tier0">
+          <span>TIER 0 ONLY (BASELINE)</span>
+        </label>
+        <label class="radio-label">
+          <input type="radio" name="layer-filter" value="tier1">
+          <span>TIER 0 + TIER 1</span>
+        </label>
+        <label class="radio-label">
+          <input type="radio" name="layer-filter" value="tier2">
+          <span>TIER 0 + TIER 1 + TIER 2</span>
+        </label>
+      </div>
+    </section>
+
+    <!-- Time Decay & Simulation Controls -->
+    <section class="panel-section">
+      <div class="section-title">SIMULATION CONTROLS</div>
+      <div class="sim-controls">
+        <div class="sim-decay-buttons">
+          <button id="btn-simulate-decay" class="btn-hazard" data-days="14">SIMULATE +14 DAYS DECAY</button>
+          <button id="btn-simulate-decay-30" class="btn-hazard-secondary" data-days="30">+30 DAYS</button>
+        </div>
+        <button id="btn-reset-db" class="btn-flat">RESET BASELINE</button>
+      </div>
+      <div class="clock-readout">
+        <span>SIMULATED CLOCK:</span>
+        <span id="simulated-clock-val">--</span>
+      </div>
+    </section>
+
+    <!-- Legend -->
+    <section class="panel-section legend-section">
+      <div class="section-title">CONDITION BANDS (0–100 INDEX)</div>
+      <div class="legend-grid">
+        <div class="legend-item"><span class="legend-swatch band-good"></span><span>GOOD (80–100)</span></div>
+        <div class="legend-item"><span class="legend-swatch band-fair"></span><span>FAIR (60–79)</span></div>
+        <div class="legend-item"><span class="legend-swatch band-poor"></span><span>POOR (40–59)</span></div>
+        <div class="legend-item"><span class="legend-swatch band-bad"></span><span>BAD (20–39)</span></div>
+        <div class="legend-item"><span class="legend-swatch band-severe"></span><span>SEVERE (0–19)</span></div>
+      </div>
+    </section>
+
+    <!-- Live Status Console -->
+    <footer class="panel-footer">
+      <div id="status-message">SYSTEM IDLE // READY</div>
+    </footer>
+  </aside>
+
+  <!-- Right Slide-in Technical Inspector Panel -->
+  <aside id="inspector-panel" class="inspector-panel">
+    <div class="inspector-header">
+      <div class="inspector-badge">SEGMENT TELEMETRY</div>
+      <button id="btn-close-inspector" class="btn-close" title="Close Inspector">&times;</button>
+    </div>
+
+    <div class="inspector-body">
+      <div class="metric-row">
+        <span class="metric-label">OSM EDGE ID</span>
+        <span class="metric-value mono" id="insp-edge-id">--</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">SEGMENT NAME</span>
+        <span class="metric-value" id="insp-edge-name">--</span>
+      </div>
+
+      <!-- Score Card -->
+      <div class="score-display">
+        <div class="score-val mono" id="insp-score">--</div>
+        <div class="score-meta">
+          <div class="score-band" id="insp-band">BAND: --</div>
+          <div class="score-conf mono" id="insp-conf">CONFIDENCE: --</div>
+        </div>
+      </div>
+
+      <div class="metric-row">
+        <span class="metric-label">DOMINANT DEFECT</span>
+        <span class="metric-value mono highlight-warn" id="insp-defect">--</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">ROAD LENGTH</span>
+        <span class="metric-value mono" id="insp-length">--</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-label">LAST INGESTED</span>
+        <span class="metric-value mono" id="insp-date">--</span>
+      </div>
+
+      <!-- Tier Breakdown Matrix -->
+      <div class="inspector-subheading">MULTI-TIER EVIDENCE MATRIX</div>
+      <div class="tier-matrix">
+        <div class="matrix-cell">
+          <div class="matrix-tier">TIER 0</div>
+          <div class="matrix-count mono" id="insp-t0-count">0</div>
+          <div class="matrix-sub">Street View</div>
+        </div>
+        <div class="matrix-cell">
+          <div class="matrix-tier">TIER 1</div>
+          <div class="matrix-count mono" id="insp-t1-count">0</div>
+          <div class="matrix-sub">Dashcam</div>
+        </div>
+        <div class="matrix-cell">
+          <div class="matrix-tier">TIER 2</div>
+          <div class="matrix-count mono" id="insp-t2-count">0</div>
+          <div class="matrix-sub">Vibe Confirmed</div>
+        </div>
+      </div>
+
+      <!-- Observations Log -->
+      <div class="inspector-subheading-row">
+        <div class="inspector-subheading">OBSERVATION TELEMETRY LOG</div>
+        <select id="insp-filter-select" class="insp-filter-select mono">
+          <option value="all">ALL OBSERVATIONS</option>
+          <option value="defects" selected>DEFECTS ONLY</option>
+          <option value="potholes">POTHOLES ONLY</option>
+          <option value="imu_verified">IMU VERIFIED</option>
+          <option value="suppressed">SUPPRESSED</option>
+        </select>
+      </div>
+      <div id="insp-obs-list" class="obs-list">
+        <div class="empty-obs">Click a road segment to view observations.</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Modal: Video Upload for Tier 1 Analysis -->
+  <div id="video-upload-modal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-badge">TIER 1 // VIDEO INGESTION PIPELINE</div>
+        <h2 class="modal-title">UPLOAD ROAD DASHCAM FOOTAGE</h2>
+        <button id="btn-close-upload-modal" class="btn-close" title="Close">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <p class="modal-desc">
+          Upload any vehicle dashcam video (.mp4, .mov, .avi) to run automated YOLOv8 defect detection,
+          route waypoint geotagging along the Bengaluru ORR corridor, and per-segment quality re-scoring.
+        </p>
+
+        <!-- Drag & Drop File Zone -->
+        <div id="video-dropzone" class="file-dropzone">
+          <input type="file" id="video-file-input" accept="video/mp4,video/quicktime,video/x-msvideo,video/webm" style="display:none;" />
+          <div class="dropzone-icon">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#F3B518" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+          </div>
+          <div class="dropzone-prompt">DRAG &amp; DROP ROAD VIDEO HERE</div>
+          <div class="dropzone-sub">or <button type="button" id="btn-browse-video" class="btn-browse">BROWSE FILES</button> (.MP4, .MOV, .AVI)</div>
+          <div id="selected-file-badge" class="selected-file-badge" style="display: none;">
+            <span class="file-icon">VIDEO:</span>
+            <span id="selected-file-name" class="mono">--</span>
+            <span id="selected-file-size" class="mono text-muted">(-- MB)</span>
+          </div>
+        </div>
+
+        <!-- Ingestion Parameters Grid -->
+        <div class="modal-grid">
+          <div class="grid-field">
+            <label for="upload-corridor" class="field-label">TARGET ORR CORRIDOR:</label>
+            <select id="upload-corridor" class="field-select mono">
+              <option value="auto" selected>Auto-Route (Full ORR Corridor)</option>
+              <option value="west">ORR West (Marathahalli - Kadubeesanahalli)</option>
+              <option value="east">ORR East (Kadubeesanahalli - Silk Board)</option>
+            </select>
+          </div>
+
+          <div class="grid-field">
+            <label for="upload-sample-rate" class="field-label">SAMPLING DENSITY:</label>
+            <select id="upload-sample-rate" class="field-select mono">
+              <option value="3.0" selected>Standard (3 FPS / Responsive)</option>
+              <option value="5.0">Dense (5 FPS)</option>
+              <option value="10.0">Ultra (10 FPS)</option>
+              <option value="1.0">Fast (1 FPS)</option>
+            </select>
+          </div>
+
+          <div class="grid-field">
+            <label for="upload-max-frames" class="field-label">FRAME SCAN LIMIT:</label>
+            <select id="upload-max-frames" class="field-select mono">
+              <option value="30">30 Frames (~10-15s rapid demo)</option>
+              <option value="60" selected>60 Frames (~20-25s scan)</option>
+              <option value="120">120 Frames (~45s scan)</option>
+              <option value="0">All Frames (Full Video)</option>
+            </select>
+          </div>
+
+          <div class="grid-field">
+            <label for="upload-confidence" class="field-label">YOLO CONFIDENCE THRESHOLD:</label>
+            <select id="upload-confidence" class="field-select mono">
+              <option value="0.30">0.30 (Sensitive)</option>
+              <option value="0.35" selected>0.35 (Recommended)</option>
+              <option value="0.45">0.45 (Strict)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Live Progress Status -->
+        <div id="upload-progress-wrap" class="progress-wrap" style="display: none;">
+          <div class="progress-bar-container">
+            <div id="upload-progress-bar" class="progress-bar-fill"></div>
+          </div>
+          <div id="upload-progress-text" class="progress-status-text mono">INITIALIZING UPLOAD...</div>
+        </div>
+
+        <!-- Result Summary Card -->
+        <div id="upload-result-box" class="upload-result-box" style="display: none;">
+          <div class="result-title">ANALYSIS COMPLETE // ROAD NETWORK UPDATED</div>
+          <div class="result-metrics">
+            <div class="res-metric"><span class="lbl">POTHOLES DETECTED:</span> <span id="res-potholes" class="val highlight-yellow">0</span></div>
+            <div class="res-metric"><span class="lbl">OBSERVATIONS LOGGED:</span> <span id="res-obs" class="val">0</span></div>
+            <div class="res-metric"><span class="lbl">TOUCHED SEGMENTS:</span> <span id="res-edges-count" class="val">0</span></div>
+          </div>
+          <div id="res-edges-list" class="res-edges-list mono"></div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="btn-cancel-video-upload" class="btn-flat">CANCEL</button>
+        <button id="btn-submit-video-upload" class="btn-hazard">ANALYZE &amp; INGEST VIDEO</button>
+        <button id="btn-view-uploaded-results" class="btn-hazard" style="display: none;">VIEW ON MAP &amp; INSPECT</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: IMU CSV Upload Modal -->
+  <div id="imu-upload-modal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-badge">TIER 2 // ACCELEROMETER STREAM</div>
+        <h2 class="modal-title">UPLOAD SYNCHRONIZED IMU CSV</h2>
+        <button id="btn-close-imu-modal" class="btn-close" title="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">Upload a high-frequency accelerometer sensor CSV file containing columns: <code class="mono">timestamp</code>, <code class="mono">acc_z</code>.</p>
+        <input type="file" id="imu-file-input" accept=".csv" class="field-file-input" />
+        <div id="imu-upload-status" class="progress-status-text mono" style="margin-top:10px;"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-cancel-imu-upload" class="btn-flat">CANCEL</button>
+        <button id="btn-submit-imu-upload" class="btn-hazard">UPLOAD &amp; ATTACH IMU</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Google Street View API Key Config Modal -->
+  <div id="gsv-config-modal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-badge">TIER 0 // STREET VIEW CONFIG</div>
+        <h2 class="modal-title">GOOGLE STREET VIEW API CREDENTIALS</h2>
+        <button id="btn-close-gsv-modal" class="btn-close" title="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">
+          Enter an active Google Street View Static API key to pull live 360° road imagery along the ORR corridor.
+          Leave empty or blank to use the high-fidelity offline baseline cold-start engine.
+        </p>
+        <div class="grid-field">
+          <label for="gsv-key-input" class="field-label">API KEY:</label>
+          <input type="password" id="gsv-key-input" placeholder="AIzaSy..." class="field-input mono" />
+        </div>
+        <div id="gsv-key-status" class="progress-status-text mono" style="margin-top:8px;"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-cancel-gsv" class="btn-flat">CANCEL</button>
+        <button id="btn-save-gsv" class="btn-hazard">SAVE &amp; APPLY KEY</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lightbox for Enlarged YOLO Detection Inspection -->
+  <div id="image-lightbox-modal" class="modal-backdrop">
+    <div class="lightbox-content">
+      <div class="lightbox-header">
+        <span id="lightbox-title" class="mono">YOLOv8 DETECTION SNAPSHOT</span>
+        <button id="btn-close-lightbox" class="btn-close">&times;</button>
+      </div>
+      <img id="lightbox-img" src="" alt="Defect Snapshot" />
+      <div id="lightbox-caption" class="lightbox-caption mono"></div>
+    </div>
+  </div>
+
+  <!-- Leaflet & App JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="/static/map.js"></script>
+</body>
+</html>
